@@ -1,0 +1,41 @@
+{
+  "target": "E32R28T",
+  "profile": "full",
+  "carrier_duty_percent": 33,
+  "battery_guard": true,
+  "theme": "Inter / charcoal / orange",
+  "flash_size": "4MB",
+  "images": [
+    {
+      "file": "bootloader.bin",
+      "offset": "0x1000",
+      "bytes": 17536,
+      "sha256": "3d234a7471f67b013686dabd4dee7c1fa915c9928463616a94bc9297acf1abf8"
+    },
+    {
+      "file": "partitions.bin",
+      "offset": "0x8000",
+      "bytes": 3072,
+      "sha256": "37f9719078927bf594a883c81ad80dd4e6d179c8db193fbded90851178aa39e7"
+    },
+    {
+      "file": "firmware.bin",
+      "offset": "0x20000",
+      "bytes": 965360,
+      "sha256": "663a02da197c8b7f142eb907e1475d8fd63184060f5fe9f360aadbd446194600"
+    }
+  ],
+  "power_modes": {
+    "default": {
+      "backlight_pwm_percent": 100,
+      "screen_off_seconds": 60,
+      "cpu_sleep": false
+    },
+    "saving": {
+      "backlight_pwm_percent": 50,
+      "sleep_seconds": 20,
+      "cpu_sleep": "light",
+      "wake_gpio": 36
+    }
+  }
+}
