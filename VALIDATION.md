@@ -6,7 +6,7 @@
 - Both assembly PDFs are single-page A3 landscape, visually inspected after rendering. Text stays within page bounds. Source diagrams and the board reference are included.
 
 - ESP32 release compile and link with PlatformIO espressif32 6.10.0, official Arduino-ESP32 2.0.17, Xtensa GCC 8.4.0 esp-2021r2-patch5, TFT_eSPI 2.5.43, XPT2046 1.4, and IRremoteESP8266 2.8.6.
-- Full profile: linked flash **964,745 / 4,063,232 bytes (23.7%)**. Simple profile: **964,553 / 4,063,232 bytes (23.7%)**. Both use **31,008 / 327,680 bytes (9.5%)** of static RAM. Runtime allocations, stacks, and IR receive buffers are additional; these numbers are not measured peak RAM or battery-life results.
+- Full profile: linked flash **964,761 / 4,063,232 bytes (23.7%)**. Simple profile: **964,553 / 4,063,232 bytes (23.7%)**. Both use **31,008 / 327,680 bytes (9.5%)** of static RAM. Runtime allocations, stacks, and IR receive buffers are additional; these numbers are not measured peak RAM or battery-life results.
 - esptool 4.5.1 validates the application image checksum and SHA-256 digest. Binary partition parsing confirms NVS at 0x9000 (64 KB), PHY data at 0x19000, and factory app at 0x20000 (3,968 KB). All regions fit 4 MB flash.
 - Native C++17 behavioral checks pass under AddressSanitizer and UndefinedBehaviorSanitizer; LeakSanitizer was disabled because it cannot operate under this execution environment's process tracing.
 - All **2,978 catalog records** pass bounds, unique-ID, string termination, raw-payload bounds, parser, and serialization round-trip checks.

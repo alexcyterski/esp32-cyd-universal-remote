@@ -47,7 +47,7 @@ public:
     view.lines={edit.size()>33?".."+edit.substr(edit.size()-31):edit};
     std::string keys=keyPage?"UVWXYZ0123456789:,- ":"ABCDEFGHIJKLMNOPQRST";
     for(int i=0;i<20;i++)button(5+(i%5)*47,80+(i/5)*40,43,38,keys[i]==' '?"_":std::string(1,keys[i]),KEY,keys[i]);
-    button(5,240,70,38,keyPage?"ABC":"123",KEYPAGE);button(80,240,70,38,"Erase",ERASE);button(155,240,80,38,"Done",DONE,0,"",true);
+    button(5,240,95,38,keyPage?"ABC":"U-Z / 123",KEYPAGE);button(105,240,60,38,"Erase",ERASE);button(170,240,65,38,"Done",DONE,0,"",true);
     button(5,280,230,40,"Cancel",CANCEL);view.status="";if(!status.empty())view.subtitle=status;return;
   }
   nav();

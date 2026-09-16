@@ -22,7 +22,7 @@
       "file": "firmware.bin",
       "offset": "0x20000",
       "bytes": 965168,
-      "sha256": "5d48f87dc55be6f13155a8f498d012d3aeb384997c8e9fd7d0348cfdc69fa21f"
+      "sha256": "52129f30efa1c14638fb397df3ddfd88c0d804176ca815a8f687f86b4f30cc67"
     }
   ],
   "power_modes": {
