@@ -79,6 +79,8 @@ CODE NEC:32:20DF10EF
 
 This imports a code into the review screen; it does not automatically transmit. **View code**, capture, and transmission also print the full text over USB. Maximum input is 6,200 characters. USB import is the practical route for long raw codes.
 
+Send `TXTEST` followed by a newline to generate six 50 ms, 38 kHz carrier bursts over approximately half a second. This uses the normal transmit path and selected profile, but does not represent an appliance command. Use it to check GPIO27, LED polarity, and carrier modulation with a scope, logic analyzer, nearby IR receiver, or an IR-sensitive camera. The full profile still applies its battery guard.
+
 ## Hardware configuration
 
 | Function | GPIO / connector |

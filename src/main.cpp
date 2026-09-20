@@ -148,7 +148,7 @@ void setup(){
  app.receiver=[](bool on){if(on)listenStart=millis();reception.set(on);};
  app.init();lastInteraction=millis();
  Serial.println(board::FULL_BUILD?"PULSE FULL: nominal 33% carrier; battery TX guard":"PULSE SIMPLE: nominal 50% carrier; one low-current LED");
- Serial.println("USB commands: BAT, CAL, or CODE NEC:32:20DF10EF");
+ Serial.println("USB commands: BAT, CAL, TXTEST, or CODE NEC:32:20DF10EF");
 }
 void sleepDevice(){
  // All calls occur on the UI task, after synchronous sends and NVS writes finish.
@@ -180,6 +180,10 @@ void loop(){
   char ch=Serial.read();if(ch=='\n'){
    if(!serialOverflow&&serialLine=="BAT"){auto mv=sampleBattery();batteryGuard.update(mv);Serial.printf("BAT node=%u mV, scale=%.4f, profile=%s, guard=%s\n",mv,board::BATTERY_SCALE,board::FULL_BUILD?"FULL":"SIMPLE",board::FULL_BUILD?(batteryGuard.allowed()?"ready":"blocked"):"disabled");}
    if(!serialOverflow&&serialLine=="CAL"){app.fail("Calibration updated");calibrate();lastInteraction=millis();}
+   if(!serialOverflow&&serialLine=="TXTEST"){
+    pulse::Code test;test.protocol=pulse::RAW;test.khz=38;test.raw={50000,50000,50000,50000,50000,50000,50000,50000,50000,50000,50000};
+    Serial.println(emit(test)?"TXTEST: six 50 ms carrier bursts sent":"TXTEST: blocked");
+   }
    if(!serialOverflow&&serialLine.rfind("CODE ",0)==0){pulse::Code c;std::string err;if(pulse::parse(serialLine.substr(5),c,err))app.learned(c,"Imported over USB");else app.fail(err);}
    if(serialOverflow)app.fail("USB input too long");
    serialLine.clear();serialOverflow=false;

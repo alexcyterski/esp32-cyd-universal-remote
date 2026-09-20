@@ -11,6 +11,14 @@ class Profiles(unittest.TestCase):
   s=(R/'platformio.ini').read_text();simple=s.split('[env:e32r28t_simple]')[1].split('[env:e32r28t_full]')[0];full=s.split('[env:e32r28t_full]')[1]
   self.assertIn('PULSE_FULL_BUILD=0',simple);self.assertIn('PULSE_IR_DUTY=50',simple)
   self.assertIn('PULSE_FULL_BUILD=1',full);self.assertIn('PULSE_IR_DUTY=33',full)
+ def test_upload_matches_partition_layout(self):
+  ini=(R/'platformio.ini').read_text();command=next(line for line in ini.splitlines() if line.startswith('upload_command'))
+  self.assertIn('board_upload.offset_address = 0x20000',ini)
+  self.assertIn('0x1000 "$BUILD_DIR/bootloader.bin"',command)
+  self.assertIn('0x8000 "$BUILD_DIR/partitions.bin"',command)
+  self.assertIn('0x20000 "$SOURCE"',command)
+  self.assertNotIn('0xe000',command.lower())
+  self.assertIn('factory, app, factory, 0x20000,', (R/'partitions.csv').read_text())
  def test_guard_precedes_send(self):
   s=(R/'src/main.cpp').read_text().split('bool emit(')[1].split('void pollReceiver')[0]
   self.assertLess(s.index('batteryGuard.allowed()'),s.index('emitter.sendNEC'))
