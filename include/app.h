@@ -6,7 +6,8 @@
 #include <set>
 namespace pulse {
 struct Slot {bool used=false;std::string description;Code code;};
-struct State {std::vector<uint32_t> favorites;std::array<Slot,8> slots;};
+constexpr int SAVED_CODE_COUNT=24;
+struct State {std::vector<uint32_t> favorites;std::array<Slot,SAVED_CODE_COUNT> slots;};
 enum Act {TAB=1,BACK,OPEN,SEND,FAVORITE,PREV,NEXT,LISTEN,ENTER,SAVED,SAVE,DELETE_SLOT,CONFIRM_DELETE,KEY,KEYPAGE,ERASE,DONE,CANCEL,CODE_TEXT,RENAME,POWER,SET_POWER};
 enum Screen {FAVS,TYPES,BRANDS,ACTIONS,DETAIL,LAB,SLOTS,CAPTURE,EDITOR,CODEVIEW,DELETEVIEW,POWER_VIEW};
 class App {
@@ -17,6 +18,7 @@ public:
  std::function<bool(const Code&)> transmit=[](const Code&){return true;};
  std::function<void(bool)> receiver=[](bool){};
  bool powerSaving=false;
+ uint16_t batteryMv=0;
  std::function<bool(bool)> persistPower=[](bool){return true;};
 private:
  std::vector<std::string> names;std::vector<uint32_t> indices;
@@ -31,8 +33,8 @@ private:
  void go(Screen s){stop();screen=s;page=0;status.clear();listReady=false;dirty=true;}
  void openCode(){edit.clear();editingName=false;returnScreen=LAB;go(EDITOR);}
  void saveName(){
-   if(selectedSlot<0){for(int i=0;i<8;i++)if(!state.slots[i].used){selectedSlot=i;break;}}
-   if(selectedSlot<0){status="8/8 saved. Delete one first.";dirty=true;return;}
+   if(selectedSlot<0){for(int i=0;i<SAVED_CODE_COUNT;i++)if(!state.slots[i].used){selectedSlot=i;break;}}
+   if(selectedSlot<0){status=std::to_string(SAVED_CODE_COUNT)+"/"+std::to_string(SAVED_CODE_COUNT)+" saved. Delete one first.";dirty=true;return;}
    edit=state.slots[selectedSlot].used?state.slots[selectedSlot].description:"";editingName=true;keyPage=0;returnScreen=screen;go(EDITOR);
  }
  size_t listSize() const {return screen==TYPES||screen==BRANDS?names.size():screen==ACTIONS?indices.size():screen==FAVS?state.favorites.size():screen==SLOTS?indices.size():0;}
@@ -41,7 +43,7 @@ public:
  void fail(const std::string& s){stop();status=s;dirty=true;}
  void learned(const Code& c,const std::string& info){stop();selected={};selected.action="Captured code";selected.model=info;selected.code=c;selectedSlot=-1;go(CAPTURE);status="Captured. Test before saving.";}
  void build(){
-  view={};view.tab=tab;view.status=status;
+  view={};view.tab=tab;view.status=status;view.batteryMv=batteryMv;
   if(screen==EDITOR){
     view.title=editingName?"Name this code":"Enter IR code";view.subtitle=editingName?"One description, 28 characters":"NEC:32:20DF10EF";view.keyboard=true;
     view.lines={edit.size()>33?".."+edit.substr(edit.size()-31):edit};
@@ -87,7 +89,7 @@ public:
     button(8, sixty(),224,54,listening?"Cancel listening":"Listen",LISTEN,0,listening?"Waiting up to 12 seconds":"Capture one remote action",listening);
     button(8,122,224,54,"Enter & emit",ENTER,0,"Protocol, bit count, hex value");
     int used=0;for(auto& s:state.slots)used+=s.used;
-    button(8,184,224,54,"Saved codes",SAVED,0,std::to_string(used)+" / 8 slots used");
+    button(8,184,224,54,"Saved codes",SAVED,0,std::to_string(used)+" / "+std::to_string(SAVED_CODE_COUNT)+" slots used");
   }else if(screen==POWER_VIEW){
     view.title="Power";view.subtitle="Tap a mode to apply and save.";
     button(8,62,224,54,"Default",SET_POWER,0,"100% / screen off in 60s",!powerSaving);
@@ -95,7 +97,7 @@ public:
     button(8,194,224,48,"Back",BACK);
   }else if(screen==SLOTS){
     view.title="Saved codes";view.subtitle="Tap to send. Hold to manage.";indices.clear();
-    for(int i=0;i<8;i++)if(state.slots[i].used)indices.push_back(i);
+    for(int i=0;i<SAVED_CODE_COUNT;i++)if(state.slots[i].used)indices.push_back(i);
     page=std::min(page,int(indices.empty()?0:(indices.size()-1)/3));
     for(int j=0;j<3&&page*3+j<int(indices.size());j++){int slot=indices[page*3+j];listButton(j,state.slots[slot].description,slot,protocolName(state.slots[slot].code.protocol));}
     if(indices.empty())view.lines={"Nothing saved yet.","Listen or enter a code first."};pages(indices.size());button(190,4,44,44,"<",BACK);

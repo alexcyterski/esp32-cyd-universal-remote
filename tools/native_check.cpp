@@ -1,4 +1,4 @@
-#include "storage.h"
+#include "state_store.h"
 #include "power_guard.h"
 #include "input_guard.h"
 #include "power_mode.h"
@@ -9,6 +9,7 @@
 #include <cassert>
 #include <iomanip>
 #include <filesystem>
+#include <map>
 using namespace pulse;
 std::string xml(std::string s){std::string o;for(char c:s)o+=c=='&'?"&amp;":c=='<'?"&lt;":c=='>'?"&gt;":std::string(1,c);return o;}
 struct Svg:Canvas {
@@ -20,6 +21,55 @@ struct Svg:Canvas {
 };
 void press(App& a,Act action,int param=0,bool held=false){a.build();for(auto b:a.view.buttons)if(b.action==action&&b.param==param){a.click(b,held);a.build();return;}assert(false&&"button absent");}
 void snapshot(App& a,const std::string& name){a.build();for(auto b:a.view.buttons){assert(b.x>=0&&b.y>=0&&b.x+b.w<=240&&b.y+b.h<=320);}Svg c("preview/"+name+".svg");draw(c,a.view);}
+struct FakePreferences {
+ std::map<std::string,std::vector<uint8_t>> data;int writesLeft=-1;size_t largestWrite=0;
+ size_t getBytesLength(const char* key){return data.count(key)?data[key].size():0;}
+ size_t getBytes(const char* key,void* out,size_t n){if(getBytesLength(key)!=n)return 0;memcpy(out,data[key].data(),n);return n;}
+ size_t putBytes(const char* key,const void* in,size_t n){
+  if(writesLeft==0)return 0;if(writesLeft>0)--writesLeft;largestWrite=std::max(largestWrite,n);
+  auto p=static_cast<const uint8_t*>(in);data[key]={p,p+n};return n;
+ }
+ bool getBool(const char* key,bool fallback){return getBytesLength(key)==1?data[key][0]!=0:fallback;}
+ size_t putBool(const char* key,bool value){uint8_t b=value;return putBytes(key,&b,1);}
+ bool remove(const char* key){return data.erase(key)!=0;}
+};
+void storageChecks(const Code& code){
+ // Fixed version-1 fixture: no Favorites, NEC TV in slot 0, seven empty slots.
+ const std::vector<uint8_t> fixture={'P','S','T',1,0,1,2,'T','V',1,32,38,0,0xEF,0x10,0xDF,0x20,0,0,0,0,0,0,0,0,0,0,0,0,0};
+ State fixtureState;assert(unpack(fixture,fixtureState));
+ assert(fixtureState.slots[0].description=="TV"&&serialize(fixtureState.slots[0].code)=="NEC:32:20DF10EF");
+ State legacy;legacy.favorites={123,456};
+ for(int i=0;i<8;i++)legacy.slots[i]={true,"OLD "+std::to_string(i),code};
+ auto old=pack(legacy);old[3]=1;old.resize(old.size()-(SAVED_CODE_COUNT-8));
+ State restored;assert(unpack(old,restored)&&pack(restored)==pack(legacy));
+ for(int i=8;i<SAVED_CODE_COUNT;i++)assert(!restored.slots[i].used);
+ State next=legacy;next.slots[8]={true,"NEW",code};
+ // Interrupt at every write in migration, including publication and the edit.
+ for(int budget=0;budget<=27;budget++){
+  FakePreferences prefs;prefs.data["state"]=old;prefs.writesLeft=budget;
+  StateStore<FakePreferences> store(prefs);State current;assert(store.load(current));
+  bool saved=store.save(current,next);StateStore<FakePreferences> reboot(prefs);
+  assert(reboot.load(restored));assert(pack(restored)==pack(saved?next:legacy));
+  prefs.writesLeft=-1;assert(reboot.save(restored,next));
+  StateStore<FakePreferences> retry(prefs);assert(retry.load(restored)&&pack(restored)==pack(next));
+  assert(!prefs.data.count("state"));
+ }
+ FakePreferences prefs;StateStore<FakePreferences> store(prefs);State current;assert(store.load(current));
+ Code raw;raw.protocol=RAW;raw.khz=38;raw.raw.assign(1024,500);
+ for(int i=0;i<SAVED_CODE_COUNT;i++){
+  next=current;next.slots[i]={true,std::string(28,'A'),raw};assert(store.save(current,next));current=next;
+ }
+ next=current;next.favorites.resize(64);assert(store.save(current,next));current=next;
+ // Replace a maximum-sized RAW record while all slots are full.
+ next=current;next.slots[23].code.raw[0]=600;assert(store.save(current,next));current=next;
+ assert(prefs.largestWrite==MAX_SLOT_BYTES);
+ StateStore<FakePreferences> reboot(prefs);assert(reboot.load(restored)&&pack(restored)==pack(current));
+ prefs.writesLeft=0;next=current;next.slots[23]={};assert(!store.save(current,next));
+ assert(reboot.load(restored)&&pack(restored)==pack(current));
+ prefs.writesLeft=-1;assert(store.save(current,next));assert(reboot.load(restored)&&!restored.slots[23].used);
+ // An invalid record must not partially replace the caller's state.
+ prefs.data["slot0"].pop_back();auto before=pack(restored);assert(!reboot.load(restored)&&pack(restored)==before);
+}
 int main(){
  struct FakeReceiver {bool running=false;int starts=0,stops=0;
   void enableIRIn(){assert(!running);running=true;++starts;}
@@ -56,8 +106,11 @@ int main(){
  ToggleState toggles;assert(toggles.next(RC5,0)==0x800);assert(toggles.next(NEC,0x1234)==0x1234);
  assert(toggles.next(RC6,0)==0x10000);assert(toggles.next(RC5,0)==0);assert(toggles.next(RC6,0)==0);
  BatteryGuard guard;assert(!guard.allowed());guard.update(3450);assert(guard.allowed());guard.update(3399);assert(!guard.allowed());guard.update(3500);assert(!guard.allowed());guard.update(3550);assert(guard.allowed());guard.update(0);assert(!guard.allowed());guard.update(4500);assert(!guard.allowed());guard.update(4000);assert(guard.allowed());
+ assert(batteryPercent(2900)==0&&batteryPercent(3000)==0&&batteryPercent(3600)==50&&batteryPercent(4200)==100&&batteryPercent(4300)==100);
+ assert(batteryText(0)=="--.-- V"&&batteryText(4500)=="--.-- V"&&batteryText(3000)=="3.00 V"&&batteryText(3999)=="4.00 V"&&batteryText(4200)=="4.20 V");
+ assert(textWidth(batteryText(4200),0)<=48&&textWidth(batteryText(0),0)<=48);
  std::ifstream f("assets/catalog.bin",std::ios::binary);std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),{});assert(bytes.size()>12);
- App a;a.catalog.begin(bytes.data());assert(a.catalog.size()>0);uint32_t pool;memcpy(&pool,bytes.data()+8,4);assert(pool==12+38*a.catalog.size());std::set<uint32_t> ids;
+ App a;a.batteryMv=3870;a.catalog.begin(bytes.data());assert(a.catalog.size()>0);uint32_t pool;memcpy(&pool,bytes.data()+8,4);assert(pool==12+38*a.catalog.size());std::set<uint32_t> ids;
  for(uint32_t i=0;i<a.catalog.size();i++){auto r=a.catalog.record(i);assert(ids.insert(r.id).second);for(auto off:{r.type,r.brand,r.model,r.action}){assert(pool+off<bytes.size());assert(memchr(bytes.data()+pool+off,0,bytes.size()-pool-off));}assert(pool+r.rawOffset+2*r.rawCount<=bytes.size());auto e=a.catalog.get(i);Code c;std::string err;assert(parse(serialize(e.code),c,err));assert(serialize(c)==serialize(e.code));}
  Code c;std::string err;
  assert(parse("NEC:32:20DF10EF",c,err)&&c.value==0x20DF10EF);
@@ -82,9 +135,16 @@ int main(){
  a.persistPower=[](bool){return true;};press(a,SET_POWER,0);assert(!a.powerSaving);press(a,BACK);assert(a.screen==LAB);
  assert(parse("NEC:32:20DF10EF",c,err));a.learned(c,"Decoded remote action");snapshot(a,"07-captured");press(a,SAVE);snapshot(a,"09-keyboard");
  press(a,KEY,'T');press(a,KEYPAGE);press(a,KEY,'V');press(a,DONE);assert(a.state.slots[0].used&&a.state.slots[0].description=="TV");snapshot(a,"08-saved");press(a,OPEN,0);assert(sent==2);press(a,OPEN,0,true);assert(a.screen==DELETEVIEW);press(a,RENAME);press(a,ERASE);press(a,KEY,'A');press(a,DONE);assert(a.state.slots[0].description=="TA");
- State original=a.state;for(int i=0;i<8;i++)original.slots[i]={true,"SAVED "+std::to_string(i),c};auto packed=pack(original);State loaded;assert(unpack(packed,loaded));assert(pack(loaded)==packed);for(size_t n=0;n<packed.size();n++){auto truncated=packed;truncated.resize(n);assert(!unpack(truncated,loaded));}
- a.state=original;a.learned(c,"Test");press(a,SAVE);assert(a.screen==CAPTURE&&a.status.find("8/8")!=a.status.npos);
+ for(int i=1;i<SAVED_CODE_COUNT;i++){a.learned(c,"Test");press(a,SAVE);press(a,KEY,'A');press(a,DONE);assert(a.state.slots[i].used);}
+ press(a,TAB,2);assert(a.view.buttons.back().context=="24 / 24 slots used");press(a,SAVED);
+ for(int i=0;i<7;i++)press(a,NEXT);assert(a.page==7);press(a,NEXT);assert(a.page==7);
+ press(a,OPEN,23);assert(sent==3);press(a,OPEN,23,true);press(a,RENAME);press(a,KEY,'B');press(a,DONE);assert(a.state.slots[23].description=="AB");
+ for(int i=0;i<7;i++)press(a,NEXT);press(a,OPEN,23,true);press(a,CONFIRM_DELETE);assert(!a.state.slots[23].used);
+ a.learned(c,"Test");press(a,SAVE);press(a,KEY,'C');press(a,DONE);assert(a.state.slots[23].description=="C");
+ State original=a.state;for(int i=0;i<SAVED_CODE_COUNT;i++)original.slots[i]={true,"SAVED "+std::to_string(i),c};auto packed=pack(original);State loaded;assert(unpack(packed,loaded));assert(pack(loaded)==packed);for(size_t n=0;n<packed.size();n++){auto truncated=packed;truncated.resize(n);assert(!unpack(truncated,loaded));}
+ a.state=original;a.learned(c,"Test");press(a,SAVE);assert(a.screen==CAPTURE&&a.status.find("24/24")!=a.status.npos);
  a.persist=[](const State&){return false;};press(a,TAB,0);a.selected=a.catalog.get(0);a.screen=DETAIL;auto before=pack(a.state);press(a,FAVORITE);assert(pack(a.state)==before&&a.status.find("failed")!=a.status.npos);
- Code raw;raw.protocol=RAW;raw.khz=38;raw.raw.assign(1024,500);for(auto& s:original.slots)s.code=raw;assert(unpack(pack(original),loaded));assert(pack(original).size()<20000);
- std::cout<<"PASS: "<<a.catalog.size()<<" catalog records; parser, navigation, tap/hold, favorites, eight-slot limit, rename, persistence failures, truncation, maximum raw storage.\n";
+ Code raw;raw.protocol=RAW;raw.khz=38;raw.raw.assign(1024,500);for(auto& s:original.slots){s.code=raw;s.description=std::string(28,'A');}original.favorites.resize(64);assert(unpack(pack(original),loaded));assert(pack(original).size()==MAX_STATE_BYTES);
+ storageChecks(c);
+ std::cout<<"PASS: "<<a.catalog.size()<<" catalog records; battery readout bounds, parser, navigation, tap/hold, favorites, 24-slot limit, rename/delete/reuse, persistence failures, legacy migration interruptions, truncation, maximum raw storage.\n";
 }

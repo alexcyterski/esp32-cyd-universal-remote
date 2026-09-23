@@ -2,6 +2,8 @@
 
 Target: **E32R28T, ESP32-WROOM-32E, 4 MB flash, ILI9341, XPT2046**. The firmware pin map is not for every board sold as “CYD.”
 
+**For the battery readout and 24 saved-code slots, build/upload the current source using the PlatformIO section below.** The bundled `firmware/` images predate these features.
+
 ## Prebuilt firmware — quickest route
 
 Connect the board with a USB data cable. From this folder, install the flashing utility and run:
@@ -61,8 +63,9 @@ Select **Listen / Emit → Eco → Power saving** for approximately 50% backligh
 2. Browse a known code and test it at close range before adding it to Favorites.
 3. Capture one button on your original remote, emit it, save it, and power-cycle. Confirm the saved description and code persist.
 4. Confirm a Favorites tap emits once, while a hold opens details without emitting.
-5. Fill all eight slots, then confirm a ninth save requests deletion instead of overwriting.
+5. Fill all 24 slots, then confirm a 25th save requests deletion instead of overwriting. Page through all eight pages; rename/delete an entry on the last page, save into the freed slot, and confirm persistence after restart. Include maximum-length RAW codes when checking storage capacity.
 6. In Default, confirm the backlight goes off after 60 seconds and the first waking touch does not emit. In Power saving, confirm lower brightness, sleep after 20 seconds, and tap-to-wake without an IR transmission. Hold the waking touch, release it, then tap again to activate a button. Confirm mode selection survives a restart.
 7. Test practical distance and viewing angle using your chosen emitter circuit. These depend on emitter current, optics, receiver placement, and ambient light.
+8. Compare the header voltage with serial `BAT` and a meter. Verify empty/full indication at 3.00/4.20 V using an adjustable supply, five-second updates, and a fresh reading after wake. Hold a touch through an update and check that release still activates the intended button.
 
 Never apply a 5 V receiver signal to GPIO35. Firmware does not replace the emitter current-limiting resistors or the transistor required by the higher-current build.

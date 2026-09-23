@@ -10,7 +10,7 @@
 #include <esp_sleep.h>
 #include <driver/rtc_io.h>
 #include "board_config.h"
-#include "storage.h"
+#include "state_store.h"
 #include "power_guard.h"
 #include "input_guard.h"
 #include "power_mode.h"
@@ -26,11 +26,18 @@ IRsend emitter(board::IR_TX);
 IRrecv receiver(board::IR_RX,1024,50,true);
 pulse::ReceiverControl<IRrecv> reception(receiver);
 Preferences prefs;
+pulse::StateStore<Preferences> savedState(prefs);
 pulse::App app;
 pulse::BatteryGuard batteryGuard;
+uint32_t lastBatterySample=0;
+bool batteryDirty=false;
 uint16_t sampleBattery(){
  uint32_t samples[9];for(auto& value:samples)value=analogReadMilliVolts(board::BATTERY_ADC);
  std::sort(samples,samples+9);return lround(samples[4]*board::BATTERY_SCALE);
+}
+uint16_t refreshBattery(){
+ auto mv=sampleBattery();batteryGuard.update(mv);app.batteryMv=mv;
+ lastBatterySample=millis();batteryDirty=true;return mv;
 }
 uint32_t listenStart=0,lastInteraction=0,flashUntil=0;
 bool screenOff=false;
@@ -39,7 +46,7 @@ constexpr int BACKLIGHT_CHANNEL=7;
 void brightness(uint8_t level){
  static int previous=-1;if(previous!=level){ledcWrite(BACKLIGHT_CHANNEL,level);previous=level;}
 }
-void wakeScreen(){screenOff=false;brightness(pulse::activeBrightness(app.powerSaving));lastInteraction=millis();}
+void wakeScreen(){if(screenOff)lastBatterySample=millis()-5000;screenOff=false;brightness(pulse::activeBrightness(app.powerSaving));lastInteraction=millis();}
 pulse::ToggleState toggles;
 pulse::Calibration cal;
 struct Display: pulse::Canvas {
@@ -79,7 +86,7 @@ void calibrate(){
  }
 }
 bool emit(const pulse::Code& c){
- if(board::FULL_BUILD){batteryGuard.update(sampleBattery());if(!batteryGuard.allowed()){
+ if(board::FULL_BUILD){refreshBattery();if(!batteryGuard.allowed()){
   app.transmitError=batteryGuard.valid()?"Battery low: recharge":"Battery reading invalid";digitalWrite(board::IR_TX,LOW);return false;
  }}
  pulse::Code checked;std::string error;if(!pulse::parse(pulse::serialize(c),checked,error))return false;
@@ -93,7 +100,7 @@ bool emit(const pulse::Code& c){
   case pulse::RAW:emitter.sendRaw(c.raw.data(),c.raw.size(),c.khz);break;
   default:return false;
  }
- digitalWrite(board::IR_TX,LOW);if(board::FULL_BUILD)batteryGuard.update(sampleBattery());flashUntil=millis()+400;Serial.println(pulse::serialize(c).c_str());return true;
+ digitalWrite(board::IR_TX,LOW);refreshBattery();flashUntil=millis()+400;Serial.println(pulse::serialize(c).c_str());return true;
 }
 void pollReceiver(){
  if(!app.listening)return;
@@ -141,12 +148,11 @@ void setup(){
  bool hasCal=prefs.getBytesLength("cal")==sizeof(cal)&&prefs.getBytes("cal",&cal,sizeof(cal))==sizeof(cal);
  if(!hasCal||!cal.valid()||digitalRead(0)==LOW)calibrate();
  app.catalog.begin(catalog_start);emitter.begin();
- size_t n=prefs.getBytesLength("state");
- if(n&&n<20000){std::vector<uint8_t> b(n);prefs.getBytes("state",b.data(),n);if(!pulse::unpack(b,app.state))app.status="Saved data invalid; not loaded.";}
- app.persist=[storageReady](const pulse::State& s){if(!storageReady)return false;auto b=pulse::pack(s);return prefs.putBytes("state",b.data(),b.size())==b.size();};
+ if(storageReady&&!savedState.load(app.state))app.status="Saved data invalid; not loaded.";
+ app.persist=[storageReady](const pulse::State& s){return storageReady&&savedState.save(app.state,s);};
  app.transmit=emit;
  app.receiver=[](bool on){if(on)listenStart=millis();reception.set(on);};
- app.init();lastInteraction=millis();
+ refreshBattery();app.init();lastInteraction=millis();
  Serial.println(board::FULL_BUILD?"PULSE FULL: nominal 33% carrier; battery TX guard":"PULSE SIMPLE: nominal 50% carrier; one low-current LED");
  Serial.println("USB commands: BAT, CAL, TXTEST, or CODE NEC:32:20DF10EF");
 }
@@ -166,7 +172,7 @@ void sleepDevice(){
  rtc_gpio_deinit(irq);pinMode(board::TOUCH_IRQ,INPUT);
  digitalWrite(board::IR_TX,LOW);
  tft.writecommand(ILI9341_SLPOUT);delay(120);tft.writecommand(ILI9341_DISPON);
- flashUntil=0;screenOff=false;lastInteraction=millis();wakeRelease.arm();app.dirty=true;
+ flashUntil=0;screenOff=false;lastInteraction=millis();lastBatterySample=millis()-5000;wakeRelease.arm();app.dirty=true;
  // Redraw before re-enabling the backlight in loop().
  if(err!=ESP_OK&&err!=ESP_ERR_SLEEP_REJECT)app.fail("Sleep failed; staying awake");
  Serial.println("Awake");
@@ -178,7 +184,7 @@ void loop(){
  for(int budget=256;budget>0&&Serial.available();--budget){
   wakeScreen();
   char ch=Serial.read();if(ch=='\n'){
-   if(!serialOverflow&&serialLine=="BAT"){auto mv=sampleBattery();batteryGuard.update(mv);Serial.printf("BAT node=%u mV, scale=%.4f, profile=%s, guard=%s\n",mv,board::BATTERY_SCALE,board::FULL_BUILD?"FULL":"SIMPLE",board::FULL_BUILD?(batteryGuard.allowed()?"ready":"blocked"):"disabled");}
+   if(!serialOverflow&&serialLine=="BAT"){auto mv=refreshBattery();Serial.printf("BAT node=%u mV, scale=%.4f, profile=%s, guard=%s\n",mv,board::BATTERY_SCALE,board::FULL_BUILD?"FULL":"SIMPLE",board::FULL_BUILD?(batteryGuard.allowed()?"ready":"blocked"):"disabled");}
    if(!serialOverflow&&serialLine=="CAL"){app.fail("Calibration updated");calibrate();lastInteraction=millis();}
    if(!serialOverflow&&serialLine=="TXTEST"){
     pulse::Code test;test.protocol=pulse::RAW;test.khz=38;test.raw={50000,50000,50000,50000,50000,50000,50000,50000,50000,50000,50000};
@@ -202,7 +208,10 @@ void loop(){
   const uint32_t now=millis();int pressed=gesture.release(now,viewRevision,app.dirty);
   if(pressed>=0&&pressed<int(app.view.buttons.size())){auto b=app.view.buttons[pressed];app.click(b,gesture.held(now));if(b.action==pulse::CODE_TEXT)Serial.println(pulse::serialize(app.selected.code).c_str());}
  }
- if(app.dirty){++viewRevision;app.build();tft.startWrite();pulse::draw(display,app.view,int32_t(flashUntil-millis())>0);tft.endWrite();app.dirty=false;}
+ if(!screenOff&&!app.listening&&millis()-lastBatterySample>=5000)refreshBattery();
+ if(app.dirty){++viewRevision;app.build();tft.startWrite();pulse::draw(display,app.view,int32_t(flashUntil-millis())>0);tft.endWrite();app.dirty=false;batteryDirty=false;}
+ // A voltage-only repaint must not invalidate a held touch or reset idle time.
+ else if(batteryDirty&&!screenOff){app.view.batteryMv=app.batteryMv;tft.startWrite();pulse::drawBattery(display,app.view);tft.endWrite();batteryDirty=false;}
  if(flashUntil&&int32_t(millis()-flashUntil)>=0){flashUntil=0;display.rect(0,0,240,3,pulse::PANEL);}
  bool busy=app.listening||touching||gesture.down||blocked||Serial.available();
  if(!screenOff&&pulse::idleDue(millis(),lastInteraction,app.powerSaving,busy)){

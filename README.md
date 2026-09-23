@@ -17,11 +17,15 @@ A compact, offline touchscreen remote for the **ELEGOO/LCDWiki E32R28T**, with s
 | --- | --- |
 | Favorites | Up to 64 catalog actions. Tap to transmit immediately; hold for at least 650 ms to view details or remove a favorite. Context identifies the manufacturer and device type. |
 | All | Every action in the **bundled catalog**, arranged by device type → manufacturer → action. Model names distinguish variants. Three large rows per page, with explicit previous/next buttons. Details show protocol and code, allow transmission, and toggle a favorite. |
-| Listen / Emit | Listen for one code, enter a code manually, or open the eight saved-code slots. Tap a saved entry to send it; hold to rename or delete it. |
+| Listen / Emit | Listen for one code, enter a code manually, or open the 24 saved-code slots. Tap a saved entry to send it; hold to rename or delete it. |
 
 Main action/list targets are 44–54 px tall. Keyboard keys are 43 × 38 px; a stylus is useful for text. Navigation stays at the bottom. An orange line flashes for 400 ms after a send. Open **Listen / Emit → Eco** to select a power mode. The first waking touch restores the screen without firing an action.
 
 ## Power modes
+
+Every screen includes a battery voltage readout (for example, **3.87 V**) and a small level bar. The bar scales linearly from **3.00 V = empty** to **4.20 V = full**, clamping outside that range; the voltage itself remains the measured value. At or below 3.00 V the readout turns orange. Invalid readings show `--.-- V`. Both profiles sample the onboard GPIO34 divider every five seconds while awake, pausing during IR learning, and refresh after sending or waking. Battery updates do not reset the inactivity timer.
+
+These are display endpoints, not charging or shutdown controls. The full build's transmit guard uses its existing 3.40 V trip / 3.55 V recovery thresholds. The ADC reads the board's BAT+ node, so USB charger voltage may appear even without a connected battery. Compare with a meter and adjust `board::BATTERY_SCALE` if needed.
 
 | Mode | Active backlight | Inactivity behavior |
 | --- | --- | --- |
@@ -50,7 +54,7 @@ git -C ../Flipper-IRDB checkout d126fb1b6f1e114c52b4a8c19839ea65e3a9c24d
 python tools/build_catalog.py ../Flipper-IRDB --output assets
 ```
 
-Rebuild firmware after changing the catalog. Favorites use stable IDs; removed entries can be removed from Favorites with a hold. Adding a learned/manual code uses the eight saved slots rather than changing the compiled catalog.
+Rebuild firmware after changing the catalog. Favorites use stable IDs; removed entries can be removed from Favorites with a hold. Adding a learned/manual code uses the 24 saved slots rather than changing the compiled catalog.
 
 ## Manual codes and capture limits
 
@@ -69,7 +73,9 @@ These are syntax examples; the short RAW example is not a complete appliance com
 
 RAW permits 30–60 kHz, 3–1,024 durations, each 1–65,535 µs, and at most 1.5 seconds total. Incoming captures end after a 50 ms silence; longer gaps may split a multi-frame command. Long or unsupported stateful air-conditioner messages may not fit. A VS1838B reports demodulated timing, **not carrier frequency**: unrecognized captures assume 38 kHz and say so. It cannot faithfully learn every carrier, and replay is not guaranteed for rolling codes or unusual multi-frame protocols. All send paths use the selected firmware profile's nominal carrier duty: 33% for full, 50% for simple. Actual timing requires measurement on hardware.
 
-Listen waits up to 12 seconds. Repeat-only packets and overflowing captures are not saved. Test a capture before saving. Each of the eight slots holds one code and **one description field**, up to 28 uppercase ASCII characters, digits, spaces, and the keyboard's punctuation. Full storage asks you to delete a slot first; it never silently overwrites a slot. Saving and favorite changes persist immediately in onboard NVS.
+Listen waits up to 12 seconds. Repeat-only packets and overflowing captures are not saved. Test a capture before saving. Each of the 24 slots holds one code and **one description field**, up to 28 uppercase ASCII characters, digits, spaces, and the keyboard's punctuation. Full storage asks you to delete a slot first; it never silently overwrites a slot. Saving and favorite changes persist immediately in onboard NVS.
+
+Existing eight-slot saves load automatically, with 16 additional empty slots. The first edit migrates storage to separate slot/Favorites records, retaining the original data until migration finishes. Each subsequent edit writes only its changed record, allowing 24 maximum-length RAW codes within the existing 64 KB NVS partition. The partition map and touch/power preferences are preserved. Older firmware cannot read the migrated records.
 
 For long RAW input, use a serial terminal at **115200 baud**, newline ending, and send:
 
@@ -102,7 +108,8 @@ Board references: [LCDWiki E32R28T](https://www.lcdwiki.com/2.8inch_ESP32-32E_Di
 
 - `src/main.cpp`: display, touch calibration, capture/transmission, USB, NVS, backlight.
 - `include/app.h`, `ui.h`: UI state machine and shared renderer.
-- `include/core.h`, `storage.h`: strict code parser, compact catalog and storage format.
+- `include/core.h`, `storage.h`, `state_store.h`: strict code parser, compact catalog, versioned storage and NVS migration.
+- `include/battery.h`: battery readout formatting and 3.0–4.2 V level range.
 - `include/input_guard.h`, `power_guard.h`: touch/calibration validation and battery transmit guard.
 - `include/power_mode.h`: inactivity policy, backlight levels and wake-gesture suppression.
 - `include/board_config.h`, `platformio.ini`: pins and reproducible build versions.

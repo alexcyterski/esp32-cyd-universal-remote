@@ -1,6 +1,15 @@
 # Software and build verification
 
-## Passed
+## Current source: battery readout and 24 slots
+
+- Both PlatformIO profiles build successfully: simple uses **970,105 bytes** of linked flash, full **970,257 bytes**; each uses **32,048 bytes** of static RAM. Partition offsets are unchanged.
+- Native C++17 checks pass normally and with UndefinedBehaviorSanitizer. New checks cover 3.00/4.20 V level endpoints, clamping, voltage formatting, invalid readings, all 24 slots, eight-page navigation, last-slot send/rename/delete/reuse, and full-capacity refusal.
+- Storage checks cover a fixed eight-slot version-1 fixture, every interrupted migration write with a fake Preferences backend, reboot/retry, failed updates, corrupt-record rejection, and all 24 maximum-size RAW records plus 64 Favorites. A full serialized state is **50,469 bytes**; individual slot writes are at most **2,092 bytes**, avoiding whole-state replacement in the 64 KB NVS partition. Physical NVS capacity, garbage collection and power-loss behavior still require device testing.
+- All nine Python catalog/profile/integration tests pass. The ten UI previews were regenerated from the shared renderer and visually reviewed. The voltage has its own partial repaint so periodic refreshes do not change the touch view revision or inactivity timer.
+- The AddressSanitizer executable timed out on this macOS host; the current source does not have a completed ASan run. The successful checks above use the ordinary and UBSan executables.
+- Updated build outputs are under `.pio/build/e32r28t_simple/` and `.pio/build/e32r28t_full/`. Bundled release images and assembly PDFs below predate these source changes.
+
+## Bundled release verification (before these source changes)
 
 - Both target profiles compile and link successfully. Full enforces nominal 33% carrier and GPIO34 voltage lockout; simple enforces nominal 50% with one low-current emitter. Native battery tests cover startup validity, the 3.40 V trip, 3.55 V release hysteresis, zero/out-of-range readings and recovery. Static integration checks verify profile flags, common carrier override and the guard-before-send ordering.
 - Both assembly PDFs are single-page A3 landscape, visually inspected after rendering. Text stays within page bounds. Source diagrams and the board reference are included.

@@ -1,6 +1,6 @@
 # Hardware design and commissioning
 
-PULSE supports two emitter circuits on the E32R28T. The **full build** uses two battery-fed Vishay TSAL6200 emitters, each with a **33 ohm, 1%, 1/2 W** resistor and a shared AO3400A driver. The **simple build** uses one GPIO-driven, 20 mA-rated emitter with a **150 ohm, 1/4 W** resistor. Both provide the same touchscreen controls, IR learning, Favorites and eight saved-code slots. Use the assembly sheet and firmware profile that match your circuit.
+PULSE supports two emitter circuits on the E32R28T. The **full build** uses two battery-fed Vishay TSAL6200 emitters, each with a **33 ohm, 1%, 1/2 W** resistor and a shared AO3400A driver. The **simple build** uses one GPIO-driven, 20 mA-rated emitter with a **150 ohm, 1/4 W** resistor. Both provide the same touchscreen controls, battery readout, IR learning, Favorites and 24 saved-code slots. Use the assembly sheet and firmware profile that match your circuit.
 
 ## Circuit specifications
 
